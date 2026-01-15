@@ -16,8 +16,8 @@ spec:
   
   # Source configuration - where to get the manifests
   source:
-    # Public repository URL
-    repoURL: https://github.com/aws-samples/eks-capabilities-blueprints.git
+    # Public repository URL (will change to awslabs once live)
+    repoURL: https://github.com/premdass/eks-capabilities-blueprints.git
     # Path to the manifests within the repository
     path: blueprints/argocd/simple-webapp/manifests
     # Branch/tag/commit to track - HEAD tracks the default branch
