@@ -37,7 +37,7 @@ variable "argocd_admin_family_name" {
 variable "argocd_admin_email" {
   description = "Email for ArgoCD admin user"
   type        = string
-  default     = "admin@argocd.com"
+  default     = "admin@example.com"
 }
 
 variable "idc_region" {

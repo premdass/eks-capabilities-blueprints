@@ -4,12 +4,12 @@ output "configure_kubectl" {
 }
 
 output "cluster_name" {
-  description = "Cluster name of the EKS cluster"
+  description = "Cluster name of the Amazon EKS cluster"
   value       = module.eks.cluster_name
 }
 
 output "vpc_id" {
-  description = "VPC ID that the EKS cluster is using"
+  description = "VPC ID that the Amazon EKS cluster is using"
   value       = module.vpc.vpc_id
 }
 
@@ -24,7 +24,7 @@ output "availability_zones" {
 }
 
 output "cluster_endpoint" {
-  description = "Endpoint for EKS control plane"
+  description = "Endpoint for Amazon EKS control plane"
   value       = module.eks.cluster_endpoint
 }
 

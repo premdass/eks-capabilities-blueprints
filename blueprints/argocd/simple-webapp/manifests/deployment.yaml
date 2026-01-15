@@ -23,16 +23,43 @@ spec:
         app.kubernetes.io/name: nginx
         app.kubernetes.io/component: webserver
     spec:
+      # Disable automatic service account token mounting (CKV_K8S_38)
+      automountServiceAccountToken: false
+      # Pod-level security context
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: nginx
-          # Using the official nginx image from Docker Hub
-          image: nginx:1.27
+          # Using the official nginx unprivileged image pinned by digest (CKV_K8S_43)
+          image: nginxinc/nginx-unprivileged:1.27@sha256:f9dfa9c20b2b0b7c5cc830374f22f23dee3f750b6c5291ca7e0330b5c88e6403
+          imagePullPolicy: Always
           
-          # Container port that nginx listens on
+          # Container port that nginx listens on (unprivileged uses 8080)
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
               protocol: TCP
+          
+          # Container-level security context (CKV_K8S_20, CKV_K8S_22, CKV_K8S_23, CKV_K8S_28, CKV_K8S_29, CKV_K8S_30, CKV_K8S_37, CKV_K8S_40)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 101
+            capabilities:
+              drop:
+                - ALL
+          
+          # Volume mounts for nginx temp directories (required for read-only root filesystem)
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
           
           # Resource limits and requests
           # Adjust based on your workload requirements
@@ -41,7 +68,7 @@ spec:
               cpu: 100m
               memory: 128Mi
             limits:
-              cpu: 200m
+              cpu: "1"
               memory: 256Mi
           
           # Liveness probe - restarts container if it fails
@@ -59,3 +86,12 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+      
+      # Volumes for writable directories
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}

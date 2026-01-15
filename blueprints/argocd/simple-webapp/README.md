@@ -1,16 +1,16 @@
 # Simple Webapp Blueprint
 
-This blueprint deploys a basic nginx web application to your EKS cluster using ArgoCD.
+This blueprint deploys a basic nginx web application to your Amazon Elastic Kubernetes Service (Amazon EKS) cluster using ArgoCD.
 
 ## Overview
 
-- **Application**: nginx web server
+- **Application**: nginx web server (unprivileged)
 - **Namespace**: simple-webapp
 - **Service Type**: ClusterIP (internal access)
 
 ## Prerequisites
 
-1. EKS cluster with ArgoCD capability enabled
+1. Amazon EKS cluster with ArgoCD capability enabled
 2. kubectl configured to access your cluster
 3. Access to apply ArgoCD Application resources
 
@@ -45,8 +45,18 @@ Then open http://localhost:8080 in your browser.
 | Resource | Name | Description |
 |----------|------|-------------|
 | Namespace | simple-webapp | Dedicated namespace for the application |
-| Deployment | nginx | nginx web server with 1 replica |
+| Deployment | nginx | nginx web server with 1 replica (security-hardened) |
 | Service | nginx | ClusterIP service exposing port 80 |
+
+## Security Features
+
+The deployment includes security best practices:
+- Runs as non-root user
+- Read-only root filesystem
+- Drops all Linux capabilities
+- Disables privilege escalation
+- Uses seccomp runtime/default profile
+- Disables service account token auto-mounting
 
 ## Sync Policy
 
@@ -63,4 +73,4 @@ To remove the application:
 kubectl delete -f application.yaml
 ```
 
-This will delete the ArgoCD Application and all managed resources (namespace, deployment, service).
+This deletes the ArgoCD Application and all managed resources (namespace, deployment, service).

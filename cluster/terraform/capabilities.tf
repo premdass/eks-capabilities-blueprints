@@ -72,10 +72,107 @@ resource "aws_iam_role" "ack_capability" {
   tags = local.tags
 }
 
-# Attach AdministratorAccess for getting started - narrow this for production
-resource "aws_iam_role_policy_attachment" "ack_admin" {
-  role       = aws_iam_role.ack_capability.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+# Least-privilege policy for ACK capability
+# Scoped to common ACK controllers: S3, RDS, DynamoDB, EC2, and IAM (for service-linked roles)
+resource "aws_iam_role_policy" "ack_capability" {
+  name = "${local.name}-ack-policy"
+  role = aws_iam_role.ack_capability.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3BucketManagement"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:GetBucketLocation",
+          "s3:GetBucketTagging",
+          "s3:PutBucketTagging",
+          "s3:GetBucketVersioning",
+          "s3:PutBucketVersioning",
+          "s3:GetBucketEncryption",
+          "s3:PutBucketEncryption",
+          "s3:GetBucketPolicy",
+          "s3:PutBucketPolicy",
+          "s3:DeleteBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:ListBucket"
+        ]
+        Resource = "arn:aws:s3:::*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = var.region
+          }
+        }
+      },
+      {
+        Sid    = "RDSManagement"
+        Effect = "Allow"
+        Action = [
+          "rds:CreateDBInstance",
+          "rds:DeleteDBInstance",
+          "rds:DescribeDBInstances",
+          "rds:ModifyDBInstance",
+          "rds:AddTagsToResource",
+          "rds:RemoveTagsFromResource",
+          "rds:ListTagsForResource",
+          "rds:CreateDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+          "rds:DescribeDBSubnetGroups"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = var.region
+          }
+        }
+      },
+      {
+        Sid    = "DynamoDBManagement"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable",
+          "dynamodb:DescribeTable",
+          "dynamodb:UpdateTable",
+          "dynamodb:TagResource",
+          "dynamodb:UntagResource",
+          "dynamodb:ListTagsOfResource"
+        ]
+        Resource = "arn:aws:dynamodb:${var.region}:*:table/*"
+      },
+      {
+        Sid    = "EC2NetworkingForRDS"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeAvailabilityZones"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMServiceLinkedRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole"
+        ]
+        Resource = "arn:aws:iam::*:role/aws-service-role/*"
+        Condition = {
+          StringLike = {
+            "iam:AWSServiceName" = [
+              "rds.amazonaws.com",
+              "dynamodb.amazonaws.com"
+            ]
+          }
+        }
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role" "argocd_capability" {

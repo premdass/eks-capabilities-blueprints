@@ -132,14 +132,37 @@ resource "aws_iam_role_policy" "ebs_csi_driver_additional" {
   })
 }
 
+################################################################################
+# KMS Key for EKS Secrets Encryption
+################################################################################
+
+resource "aws_kms_key" "eks" {
+  description             = "EKS secrets encryption key for ${local.name}"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = local.tags
+}
+
+resource "aws_kms_alias" "eks" {
+  name          = "alias/${local.name}-eks"
+  target_key_id = aws_kms_key.eks.key_id
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "21.14.0"
 
   name                                     = local.name
-  kubernetes_version                    = "1.34"
+  kubernetes_version                       = "1.34"
   endpoint_public_access                   = true
   enable_cluster_creator_admin_permissions = true
+
+  # Enable secrets encryption with KMS
+  cluster_encryption_config = {
+    provider_key_arn = aws_kms_key.eks.arn
+    resources        = ["secrets"]
+  }
 
   addons = {
     aws-ebs-csi-driver = {
@@ -174,7 +197,9 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  create_cloudwatch_log_group = false
+  # Enable CloudWatch logging for audit and security
+  create_cloudwatch_log_group = true
+  cluster_enabled_log_types   = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   eks_managed_node_groups = {
     mng = {

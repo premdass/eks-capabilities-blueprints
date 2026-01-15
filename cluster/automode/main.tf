@@ -11,7 +11,7 @@ data "aws_availability_zones" "available" {
 
 locals {
   name = "eks-auto-mode-blueprints"
-  
+
   vpc_cidr = "10.0.0.0/16"
   azs      = slice(data.aws_availability_zones.available.names, 0, 3)
 
@@ -21,7 +21,7 @@ locals {
 }
 
 ################################################################################
-# EKS Auto Mode Cluster
+# Amazon Elastic Kubernetes Service (Amazon EKS) Auto Mode Cluster
 ################################################################################
 
 module "eks" {
@@ -33,7 +33,7 @@ module "eks" {
   cluster_endpoint_public_access           = true
   enable_cluster_creator_admin_permissions = true
 
-  # Enable EKS Auto Mode
+  # Enable Amazon EKS Auto Mode
   cluster_compute_config = {
     enabled    = true
     node_pools = ["general-purpose"]

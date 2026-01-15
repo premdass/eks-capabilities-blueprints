@@ -4,12 +4,12 @@ output "configure_kubectl" {
 }
 
 output "cluster_name" {
-  description = "Cluster name of the EKS cluster"
+  description = "Cluster name of the Amazon EKS cluster"
   value       = module.eks.cluster_name
 }
 
 output "vpc_id" {
-  description = "VPC ID that the EKS cluster is using"
+  description = "VPC ID that the Amazon EKS cluster is using"
   value       = module.vpc.vpc_id
 }
 
