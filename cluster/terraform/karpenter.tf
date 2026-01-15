@@ -8,7 +8,7 @@ locals {
 
 module "karpenter" {
   source  = "terraform-aws-modules/eks/aws//modules/karpenter"
-  version = "21.10.1"
+  version = "21.14.0"
 
   cluster_name = module.eks.cluster_name
   namespace    = local.karpenter_namespace
@@ -19,6 +19,8 @@ module "karpenter" {
   create_pod_identity_association = true
 
   tags = local.tags
+
+  depends_on = [module.eks]
 }
 
 ################################################################################
@@ -26,15 +28,13 @@ module "karpenter" {
 ################################################################################
 
 resource "helm_release" "karpenter" {
-  name                = "karpenter"
-  namespace           = local.karpenter_namespace
-  create_namespace    = true
-  repository          = "oci://public.ecr.aws/karpenter"
-  repository_username = data.aws_ecrpublic_authorization_token.token.user_name
-  repository_password = data.aws_ecrpublic_authorization_token.token.password
-  chart               = "karpenter"
-  version             = "1.8.3"
-  wait                = false
+  name             = "karpenter"
+  namespace        = local.karpenter_namespace
+  create_namespace = true
+  repository       = "oci://public.ecr.aws/karpenter"
+  chart            = "karpenter"
+  version          = "1.8.3"
+  wait             = false
 
   values = [
     <<-EOT
@@ -51,12 +51,6 @@ resource "helm_release" "karpenter" {
       enabled: false
     EOT
   ]
-
-  lifecycle {
-    ignore_changes = [
-      repository_password
-    ]
-  }
 }
 
 # Karpenter default EC2NodeClass and NodePool
@@ -83,7 +77,7 @@ resource "kubectl_manifest" "karpenter_default_ec2_node_class" {
         NodeType: default
         intent: apps
         karpenter.sh/discovery: ${module.eks.cluster_name}
-        project: karpenter-blueprints
+        project: eks-capabilities-blueprints
   YAML
 
   depends_on = [

@@ -1,0 +1,27 @@
+# Service to expose the nginx deployment
+# This creates a stable network endpoint for the pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: simple-webapp
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: webserver
+spec:
+  # ClusterIP - internal access only within the cluster
+  # Change to LoadBalancer for external access via AWS ELB
+  # Change to NodePort for access via node IP:port
+  type: ClusterIP
+  
+  # Selector must match the deployment pod labels
+  selector:
+    app.kubernetes.io/name: nginx
+  
+  ports:
+    - name: http
+      # Port exposed by the service
+      port: 80
+      # Port on the container to forward to
+      targetPort: http
+      protocol: TCP

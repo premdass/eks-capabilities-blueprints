@@ -1,0 +1,61 @@
+# Deployment for nginx web server
+# This creates and manages the nginx pods
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: simple-webapp
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: webserver
+spec:
+  # Number of pod replicas - increase for high availability
+  replicas: 1
+  
+  # Selector must match the pod template labels
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx
+  
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx
+        app.kubernetes.io/component: webserver
+    spec:
+      containers:
+        - name: nginx
+          # Using the official nginx image from Docker Hub
+          image: nginx:1.27
+          
+          # Container port that nginx listens on
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          
+          # Resource limits and requests
+          # Adjust based on your workload requirements
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          
+          # Liveness probe - restarts container if it fails
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          
+          # Readiness probe - removes from service if it fails
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5

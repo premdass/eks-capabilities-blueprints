@@ -2,9 +2,36 @@
 provider "aws" {
   region = "us-east-1"
   alias  = "virginia"
+
+  default_tags {
+    tags = {
+      autodelete = "no"
+    }
+  }
 }
 
 provider "aws" {
+  region = var.region
+
+  default_tags {
+    tags = {
+      autodelete = "no"
+    }
+  }
+}
+
+provider "aws" {
+  region = coalesce(var.idc_region, var.region)
+  alias  = "idc"
+
+  default_tags {
+    tags = {
+      autodelete = "no"
+    }
+  }
+}
+
+provider "awscc" {
   region = var.region
 }
 
@@ -46,7 +73,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name = "karpenter-blueprints"
+  name = "eks-capabilities-blueprints"
 
   vpc_cidr = "10.0.0.0/16"
   # NOTE: You might need to change this less number of AZs depending on the region you're deploying to
@@ -61,9 +88,53 @@ locals {
 # Cluster
 ################################################################################
 
+################################################################################
+# EBS CSI Driver IAM Role for Pod Identity
+################################################################################
+
+resource "aws_iam_role" "ebs_csi_driver" {
+  name = "${local.name}-ebs-csi-driver"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "pods.eks.amazonaws.com"
+      }
+      Action = [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }]
+  })
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
+  role       = aws_iam_role.ebs_csi_driver.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# Additional permission required by EBS CSI driver v1.54+ for health checks
+resource "aws_iam_role_policy" "ebs_csi_driver_additional" {
+  name = "${local.name}-ebs-csi-additional"
+  role = aws_iam_role.ebs_csi_driver.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ec2:DescribeAvailabilityZones"]
+      Resource = "*"
+    }]
+  })
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "21.10.1"
+  version = "21.14.0"
 
   name                                     = local.name
   kubernetes_version                    = "1.34"
@@ -73,6 +144,10 @@ module "eks" {
   addons = {
     aws-ebs-csi-driver = {
       most_recent = true
+      pod_identity_association = [{
+        role_arn        = aws_iam_role.ebs_csi_driver.arn
+        service_account = "ebs-csi-controller-sa"
+      }]
     }
     coredns = {
       most_recent = true
@@ -82,9 +157,6 @@ module "eks" {
       most_recent    = true
     }
     kube-proxy = {
-      most_recent = true
-    }
-    metrics-server = {
       most_recent = true
     }
     vpc-cni = {
@@ -138,7 +210,7 @@ module "eks" {
 
 module "eks_blueprints_addons" {
   source  = "aws-ia/eks-blueprints-addons/aws"
-  version = "1.21.0"
+  version = "1.23.0"
 
   cluster_name      = module.eks.cluster_name
   cluster_endpoint  = module.eks.cluster_endpoint
@@ -149,6 +221,8 @@ module "eks_blueprints_addons" {
 
   enable_aws_load_balancer_controller = true
 
+  enable_metrics_server = true
+
   enable_aws_for_fluentbit = true
   aws_for_fluentbit = {
     set = [
@@ -157,29 +231,6 @@ module "eks_blueprints_addons" {
         value = var.region
       }
     ]
-  }
-
-  tags = local.tags
-}
-
-module "aws_ebs_csi_pod_identity" {
-  source = "terraform-aws-modules/eks-pod-identity/aws"
-
-  name    = "aws-ebs-csi"
-  version = "2.5.0"
-
-  attach_aws_ebs_csi_policy = true
-
-  # Pod Identity Associations
-  association_defaults = {
-    namespace       = "kube-system"
-    service_account = "ebs-csi-controller-sa"
-  }
-
-  associations = {
-    default = {
-      cluster_name = module.eks.cluster_name
-    }
   }
 
   tags = local.tags

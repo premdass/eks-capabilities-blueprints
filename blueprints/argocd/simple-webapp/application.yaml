@@ -1,0 +1,44 @@
+# ArgoCD Application manifest for simple-webapp
+# This tells ArgoCD to deploy and manage the nginx application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  # Name of the ArgoCD Application
+  name: simple-webapp
+  # ArgoCD applications are created in the argocd namespace
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: simple-webapp
+    app.kubernetes.io/managed-by: argocd
+spec:
+  # ArgoCD project - 'default' is the built-in project
+  project: default
+  
+  # Source configuration - where to get the manifests
+  source:
+    # Public repository URL
+    repoURL: https://github.com/aws-samples/eks-capabilities-blueprints.git
+    # Path to the manifests within the repository
+    path: blueprints/argocd/simple-webapp/manifests
+    # Branch/tag/commit to track - HEAD tracks the default branch
+    targetRevision: HEAD
+  
+  # Destination configuration - where to deploy
+  destination:
+    # Deploy to the same cluster where ArgoCD runs
+    server: https://kubernetes.default.svc
+    # Target namespace for the application resources
+    namespace: simple-webapp
+  
+  # Sync policy configuration
+  syncPolicy:
+    # Automated sync - ArgoCD will automatically apply changes
+    automated:
+      # Self-heal - automatically fix drift from desired state
+      selfHeal: true
+      # Prune - delete resources that are removed from Git
+      prune: true
+    # Sync options
+    syncOptions:
+      # Create the namespace if it doesn't exist
+      - CreateNamespace=true
