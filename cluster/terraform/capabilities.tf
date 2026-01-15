@@ -187,3 +187,40 @@ resource "aws_eks_access_policy_association" "kro_admin" {
 
   depends_on = [aws_eks_capability.kro]
 }
+
+# Grant ArgoCD cluster admin permissions for development/testing
+# For production, use more restrictive policies based on your deployment namespaces
+resource "aws_eks_access_policy_association" "argocd_admin" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.argocd_capability.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_capability.argocd]
+}
+
+
+#---------------------------------------------------------------
+# Register local cluster for ArgoCD deployments
+#---------------------------------------------------------------
+
+resource "kubernetes_secret" "argocd_cluster" {
+  metadata {
+    name      = "in-cluster"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "cluster"
+    }
+  }
+
+  data = {
+    name    = "in-cluster"
+    server  = module.eks.cluster_arn
+    project = "default"
+  }
+
+  depends_on = [aws_eks_capability.argocd]
+}

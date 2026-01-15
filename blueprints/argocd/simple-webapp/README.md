@@ -30,12 +30,6 @@ Check the application status in ArgoCD:
 kubectl get application simple-webapp -n argocd
 ```
 
-Or use the ArgoCD CLI:
-
-```bash
-argocd app get simple-webapp
-```
-
 ### Step 3: Access the Application
 
 The nginx service is exposed as ClusterIP. To access it locally:
