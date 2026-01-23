@@ -10,9 +10,9 @@ This blueprint deploys a basic nginx web application to your Amazon Elastic Kube
 
 ## Prerequisites
 
-1. Amazon EKS cluster with ArgoCD capability enabled
+1. Amazon EKS cluster with ArgoCD and kro capabilities enabled
 2. kubectl configured to access your cluster
-3. Access to apply ArgoCD Application resources
+3. Terraform applied (automatically creates the ArgoCD namespace RGD)
 
 ## Deployment
 

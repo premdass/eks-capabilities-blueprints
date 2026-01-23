@@ -52,6 +52,11 @@ output "argocd_capability_arn" {
   value       = aws_eks_capability.argocd.arn
 }
 
+output "argocd_capability_role_arn" {
+  description = "ArgoCD capability IAM role ARN (use this for kro ArgoCDNamespace instances)"
+  value       = aws_iam_role.argocd_capability.arn
+}
+
 output "argocd_server_url" {
   description = "ArgoCD server URL"
   value       = try(aws_eks_capability.argocd.configuration[0].argo_cd[0].server_url, null)

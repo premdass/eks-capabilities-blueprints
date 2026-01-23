@@ -105,39 +105,35 @@ terraform output argocd_server_url
 
 ### Terraform Cleanup
 
-To remove all resources created by Terraform:
+To remove all resources created by Terraform, run the cleanup script:
 
 ```sh
-# First, delete any blueprint resources you've deployed
-# For ArgoCD applications:
-kubectl delete applications --all -n argocd
-
-# For ACK resources (S3, RDS, etc.):
-kubectl delete buckets --all
-kubectl delete dbinstances --all
-# ... delete other ACK resources as needed
-
-# For kro resources:
-kubectl delete --all -A -l kro.run/instance
-
-# Delete Karpenter resources
-kubectl delete --all nodeclaim
-kubectl delete --all nodepool
-kubectl delete --all ec2nodeclass
-
-# Destroy Terraform resources
 export TF_VAR_region=$AWS_REGION
-terraform destroy -target="module.eks_blueprints_addons" --auto-approve
-terraform destroy -target="module.eks" --auto-approve
-terraform destroy --auto-approve
+./cleanup.sh
 ```
+
+This script will:
+1. Delete ArgoCD applications
+2. Delete ACK resources (S3 buckets, RDS instances, DynamoDB tables)
+3. Delete kro instances
+4. Delete Karpenter resources (NodeClaims, NodePools, EC2NodeClasses)
+5. Destroy Terraform resources in the correct order
 
 ## Deploying a Blueprint
 
 After you have a cluster with EKS Capabilities enabled, you can start testing each blueprint. Open the blueprint folder and follow the steps in the README.
 
-### ArgoCD Blueprints
-* [Simple Webapp](blueprints/argocd/simple-webapp/) - Deploy nginx using ArgoCD GitOps
+### Available Blueprints
+
+| Blueprint | Description |
+|-----------|-------------|
+| [simple-webapp](blueprints/simple-webapp/) | Deploy nginx using ArgoCD GitOps |
+
+### Base Components
+
+| Component | Description |
+|-----------|-------------|
+| [argocd-namespace](blueprints/base/argocd-namespace/) | kro RGD for ArgoCD namespace onboarding with RBAC |
 
 ## Supported Versions
 

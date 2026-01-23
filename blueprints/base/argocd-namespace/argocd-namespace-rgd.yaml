@@ -1,0 +1,84 @@
+# kro ResourceGraphDefinition for ArgoCD Namespace Onboarding
+# Creates namespace + RBAC granting ArgoCD write access
+#
+# Reads ArgoCD user ARN from ConfigMap (created by Terraform)
+# User only needs to specify the namespace name
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: argocd-namespace
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: ArgoCDNamespace
+    spec:
+      namespace: string | required=true description="Namespace name for ArgoCD to deploy to"
+    status:
+      namespaceReady: ${appNamespace.metadata.name != ""}
+      rbacReady: ${roleBinding.metadata.name != ""}
+
+  resources:
+    # 1. Reference the ConfigMap to get ArgoCD user ARN
+    - id: config
+      readyWhen:
+        - ${config.data.argocdUserArn != ""}
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: argocd-config
+          namespace: default
+
+    # 2. Create the namespace
+    - id: appNamespace
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.spec.namespace}
+          labels:
+            app.kubernetes.io/managed-by: kro
+            argocd.argoproj.io/managed-namespace: "true"
+
+    # 3. Role for write access to the namespace
+    - id: role
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: argocd-deploy
+          namespace: ${schema.spec.namespace}
+          labels:
+            app.kubernetes.io/managed-by: kro
+        rules:
+          - apiGroups: [""]
+            resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+          - apiGroups: ["apps"]
+            resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+          - apiGroups: ["networking.k8s.io"]
+            resources: ["ingresses", "networkpolicies"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+          - apiGroups: ["batch"]
+            resources: ["jobs", "cronjobs"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+    # 4. RoleBinding - binds to ArgoCD user from ConfigMap
+    - id: roleBinding
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: argocd-deploy
+          namespace: ${schema.spec.namespace}
+          labels:
+            app.kubernetes.io/managed-by: kro
+        subjects:
+          - kind: User
+            name: ${config.data.argocdUserArn}
+            apiGroup: rbac.authorization.k8s.io
+        roleRef:
+          kind: Role
+          name: argocd-deploy
+          apiGroup: rbac.authorization.k8s.io

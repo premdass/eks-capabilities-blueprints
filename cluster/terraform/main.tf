@@ -159,7 +159,7 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
 
   # Enable secrets encryption with KMS
-  cluster_encryption_config = {
+  encryption_config = {
     provider_key_arn = aws_kms_key.eks.arn
     resources        = ["secrets"]
   }
@@ -199,7 +199,7 @@ module "eks" {
 
   # Enable CloudWatch logging for audit and security
   create_cloudwatch_log_group = true
-  cluster_enabled_log_types   = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  enabled_log_types           = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   eks_managed_node_groups = {
     mng = {
