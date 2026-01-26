@@ -1,8 +1,11 @@
 # Creates namespace + RBAC for ArgoCD deployments via kro
 # ArgoCD user ARN is read from ConfigMap (created by Terraform)
+# Note: This CR must be in 'argocd' namespace (not the target namespace)
+# because the target namespace doesn't exist yet - this CR creates it!
 apiVersion: kro.run/v1alpha1
 kind: ArgoCDNamespace
 metadata:
   name: simple-webapp
+  namespace: argocd
 spec:
   namespace: simple-webapp

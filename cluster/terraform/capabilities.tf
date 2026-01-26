@@ -73,7 +73,7 @@ resource "aws_iam_role" "ack_capability" {
 }
 
 # Least-privilege policy for ACK capability
-# Scoped to common ACK controllers: S3, RDS, DynamoDB, EC2, EKS (AccessEntry), and IAM (for service-linked roles)
+# Scoped to EKS AccessEntry management only (for ArgoCD namespace onboarding)
 resource "aws_iam_role_policy" "ack_capability" {
   name = "${local.name}-ack-policy"
   role = aws_iam_role.ack_capability.name
@@ -81,80 +81,6 @@ resource "aws_iam_role_policy" "ack_capability" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Sid    = "S3BucketManagement"
-        Effect = "Allow"
-        Action = [
-          "s3:CreateBucket",
-          "s3:DeleteBucket",
-          "s3:GetBucketLocation",
-          "s3:GetBucketTagging",
-          "s3:PutBucketTagging",
-          "s3:GetBucketVersioning",
-          "s3:PutBucketVersioning",
-          "s3:GetBucketEncryption",
-          "s3:PutBucketEncryption",
-          "s3:GetBucketPolicy",
-          "s3:PutBucketPolicy",
-          "s3:DeleteBucketPolicy",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:PutBucketPublicAccessBlock",
-          "s3:ListBucket"
-        ]
-        Resource = "arn:aws:s3:::*"
-        Condition = {
-          StringEquals = {
-            "aws:RequestedRegion" = var.region
-          }
-        }
-      },
-      {
-        Sid    = "RDSManagement"
-        Effect = "Allow"
-        Action = [
-          "rds:CreateDBInstance",
-          "rds:DeleteDBInstance",
-          "rds:DescribeDBInstances",
-          "rds:ModifyDBInstance",
-          "rds:AddTagsToResource",
-          "rds:RemoveTagsFromResource",
-          "rds:ListTagsForResource",
-          "rds:CreateDBSubnetGroup",
-          "rds:DeleteDBSubnetGroup",
-          "rds:DescribeDBSubnetGroups"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "aws:RequestedRegion" = var.region
-          }
-        }
-      },
-      {
-        Sid    = "DynamoDBManagement"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:CreateTable",
-          "dynamodb:DeleteTable",
-          "dynamodb:DescribeTable",
-          "dynamodb:UpdateTable",
-          "dynamodb:TagResource",
-          "dynamodb:UntagResource",
-          "dynamodb:ListTagsOfResource"
-        ]
-        Resource = "arn:aws:dynamodb:${var.region}:*:table/*"
-      },
-      {
-        Sid    = "EC2NetworkingForRDS"
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeVpcs",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeAvailabilityZones"
-        ]
-        Resource = "*"
-      },
       {
         Sid    = "EKSAccessEntryManagement"
         Effect = "Allow"
@@ -172,22 +98,6 @@ resource "aws_iam_role_policy" "ack_capability" {
           "arn:aws:eks:${var.region}:*:cluster/${local.name}",
           "arn:aws:eks:${var.region}:*:access-entry/${local.name}/*/*"
         ]
-      },
-      {
-        Sid    = "IAMServiceLinkedRoles"
-        Effect = "Allow"
-        Action = [
-          "iam:CreateServiceLinkedRole"
-        ]
-        Resource = "arn:aws:iam::*:role/aws-service-role/*"
-        Condition = {
-          StringLike = {
-            "iam:AWSServiceName" = [
-              "rds.amazonaws.com",
-              "dynamodb.amazonaws.com"
-            ]
-          }
-        }
       }
     ]
   })
@@ -289,16 +199,28 @@ resource "aws_eks_capability" "kro" {
   depends_on = [module.eks]
 }
 
+# Associate AmazonEKSKROPolicy for kro's core functionality
+resource "aws_eks_access_policy_association" "kro_policy" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.kro_capability.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSKROPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_capability.kro]
+}
+
 #---------------------------------------------------------------
-# kro Least-Privilege RBAC
-# Custom ClusterRole scoped to only the resources kro needs to manage
-# Bound to kro's Kubernetes user: arn:aws:sts::<account>:assumed-role/<role>/KRO
-# See: https://docs.aws.amazon.com/eks/latest/userguide/capabilities-security.html
+# kro Additional Permissions
+# AmazonEKSKROPolicy covers kro's core functionality (kro.run, CRDs, leases, events)
+# This ClusterRole adds only what the argocd-namespace RGD needs
 #---------------------------------------------------------------
 
 data "aws_caller_identity" "current" {}
 
-# ClusterRole with least-privilege permissions for kro
+# ClusterRole with additional permissions for kro RGDs
 resource "kubernetes_cluster_role_v1" "kro_resource_manager" {
   metadata {
     name = "kro-resource-manager"
@@ -308,74 +230,25 @@ resource "kubernetes_cluster_role_v1" "kro_resource_manager" {
     }
   }
 
-  # Namespaces - kro needs to create/manage namespaces
+  # Namespaces - RGD creates namespaces
   rule {
     api_groups = [""]
     resources  = ["namespaces"]
     verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
-  # ClusterRoles and ClusterRoleBindings - for RBAC management
-  rule {
-    api_groups = ["rbac.authorization.k8s.io"]
-    resources  = ["clusterroles", "clusterrolebindings"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
-  }
-
-  # Roles and RoleBindings - namespace-scoped RBAC
-  rule {
-    api_groups = ["rbac.authorization.k8s.io"]
-    resources  = ["roles", "rolebindings"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
-  }
-
-  # ACK AccessEntry resources
+  # ACK AccessEntry - RGD creates AccessEntries for ArgoCD
   rule {
     api_groups = ["eks.services.k8s.aws"]
     resources  = ["accessentries"]
     verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
-  # kro CRDs - kro needs full access to its own resources
-  rule {
-    api_groups = ["kro.run"]
-    resources  = ["*"]
-    verbs      = ["*"]
-  }
-
-  # Events - kro needs to create events for status reporting
+  # ConfigMaps - RGD reads argocd-config (read-only)
   rule {
     api_groups = [""]
-    resources  = ["events"]
-    verbs      = ["create", "patch"]
-  }
-
-  # Core resources - kro needs these to grant them to ArgoCD
-  rule {
-    api_groups = [""]
-    resources  = ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
-  }
-
-  # Apps resources - kro needs these to grant them to ArgoCD
-  rule {
-    api_groups = ["apps"]
-    resources  = ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
-  }
-
-  # Networking resources - kro needs these to grant them to ArgoCD
-  rule {
-    api_groups = ["networking.k8s.io"]
-    resources  = ["ingresses", "networkpolicies"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
-  }
-
-  # Batch resources - kro needs these to grant them to ArgoCD
-  rule {
-    api_groups = ["batch"]
-    resources  = ["jobs", "cronjobs"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources  = ["configmaps"]
+    verbs      = ["get", "list", "watch"]
   }
 
   depends_on = [module.eks]
@@ -415,96 +288,67 @@ resource "kubernetes_cluster_role_binding_v1" "kro_resource_manager" {
 resource "kubernetes_config_map_v1" "argocd_config" {
   metadata {
     name      = "argocd-config"
-    namespace = "default"
+    namespace = "argocd"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
     }
   }
 
   data = {
-    # ArgoCD's Kubernetes username for RBAC binding
-    argocdUserArn = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/${aws_iam_role.argocd_capability.name}/ARGOCD"
+    # ArgoCD IAM role ARN for ACK AccessEntry
+    argocdRoleArn = aws_iam_role.argocd_capability.arn
+    # Cluster name for ACK AccessEntry
+    clusterName = module.eks.cluster_name
   }
 
   depends_on = [aws_eks_capability.argocd]
 }
 
 #---------------------------------------------------------------
-# ArgoCD Cluster-Wide Read Access
-# ArgoCD needs to list/watch resources cluster-wide to sync applications
+# ArgoCD EKS Access Policy
+# Grant ArgoCD cluster-wide read access via EKS access policy
+# Write access to specific namespaces is granted via kro RGD + ACK AccessEntry
 #---------------------------------------------------------------
 
-resource "kubernetes_cluster_role_v1" "argocd_read" {
+resource "aws_eks_access_policy_association" "argocd_admin_view" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.argocd_capability.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_capability.argocd]
+}
+
+#---------------------------------------------------------------
+# ArgoCD kro Access
+# ArgoCD needs to create ArgoCDNamespace CRs to trigger namespace onboarding
+#---------------------------------------------------------------
+
+resource "kubernetes_cluster_role_v1" "argocd_kro_access" {
   metadata {
-    name = "argocd-cluster-read"
+    name = "argocd-kro-access"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "app.kubernetes.io/component"  = "argocd"
     }
   }
 
-  # Core resources
-  rule {
-    api_groups = [""]
-    resources  = ["namespaces", "pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts", "events", "endpoints"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # Apps resources
-  rule {
-    api_groups = ["apps"]
-    resources  = ["deployments", "replicasets", "statefulsets", "daemonsets", "controllerrevisions"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # Networking
-  rule {
-    api_groups = ["networking.k8s.io"]
-    resources  = ["ingresses", "networkpolicies"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # Batch
-  rule {
-    api_groups = ["batch"]
-    resources  = ["jobs", "cronjobs"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # RBAC
-  rule {
-    api_groups = ["rbac.authorization.k8s.io"]
-    resources  = ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # kro resources
+  # Allow ArgoCD to create/manage ArgoCDNamespace CRs
   rule {
     api_groups = ["kro.run"]
-    resources  = ["*"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # ACK resources - each ACK controller has its own API group
-  rule {
-    api_groups = ["eks.services.k8s.aws", "s3.services.k8s.aws", "rds.services.k8s.aws", "dynamodb.services.k8s.aws", "ec2.services.k8s.aws", "iam.services.k8s.aws", "sqs.services.k8s.aws", "sns.services.k8s.aws", "lambda.services.k8s.aws"]
-    resources  = ["*"]
-    verbs      = ["get", "list", "watch"]
-  }
-
-  # Karpenter resources
-  rule {
-    api_groups = ["karpenter.sh", "karpenter.k8s.aws"]
-    resources  = ["*"]
-    verbs      = ["get", "list", "watch"]
+    resources  = ["argocdnamespaces"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
   depends_on = [module.eks]
 }
 
-resource "kubernetes_cluster_role_binding_v1" "argocd_read" {
+resource "kubernetes_cluster_role_binding_v1" "argocd_kro_access" {
   metadata {
-    name = "argocd-cluster-read"
+    name = "argocd-kro-access"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "app.kubernetes.io/component"  = "argocd"
@@ -514,7 +358,7 @@ resource "kubernetes_cluster_role_binding_v1" "argocd_read" {
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "ClusterRole"
-    name      = kubernetes_cluster_role_v1.argocd_read.metadata[0].name
+    name      = kubernetes_cluster_role_v1.argocd_kro_access.metadata[0].name
   }
 
   subject {
@@ -522,6 +366,20 @@ resource "kubernetes_cluster_role_binding_v1" "argocd_read" {
     name      = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/${aws_iam_role.argocd_capability.name}/ARGOCD"
     api_group = "rbac.authorization.k8s.io"
   }
+}
+
+# Grant ArgoCD EditPolicy on argocd namespace for creating ArgoCDNamespace CRs
+resource "aws_eks_access_policy_association" "argocd_ns_edit" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.argocd_capability.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
+
+  access_scope {
+    type       = "namespace"
+    namespaces = ["argocd"]
+  }
+
+  depends_on = [aws_eks_capability.argocd]
 }
 
 #---------------------------------------------------------------

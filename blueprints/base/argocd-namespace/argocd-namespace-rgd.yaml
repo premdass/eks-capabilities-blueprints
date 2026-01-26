@@ -1,7 +1,7 @@
 # kro ResourceGraphDefinition for ArgoCD Namespace Onboarding
-# Creates namespace + RBAC granting ArgoCD write access
+# Creates namespace + EKS AccessEntry granting ArgoCD write access
 #
-# Reads ArgoCD user ARN from ConfigMap (created by Terraform)
+# Reads ArgoCD role ARN and cluster name from ConfigMap (created by Terraform)
 # User only needs to specify the namespace name
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
@@ -15,19 +15,20 @@ spec:
       namespace: string | required=true description="Namespace name for ArgoCD to deploy to"
     status:
       namespaceReady: ${appNamespace.metadata.name != ""}
-      rbacReady: ${roleBinding.metadata.name != ""}
+      accessEntryReady: ${accessEntry.status.ackResourceMetadata.arn != ""}
 
   resources:
-    # 1. Reference the ConfigMap to get ArgoCD user ARN
+    # 1. Reference the ConfigMap to get ArgoCD role ARN and cluster name
     - id: config
       readyWhen:
-        - ${config.data.argocdUserArn != ""}
+        - ${config.data.argocdRoleArn != ""}
+        - ${config.data.clusterName != ""}
       template:
         apiVersion: v1
         kind: ConfigMap
         metadata:
           name: argocd-config
-          namespace: default
+          namespace: argocd
 
     # 2. Create the namespace
     - id: appNamespace
@@ -40,45 +41,21 @@ spec:
             app.kubernetes.io/managed-by: kro
             argocd.argoproj.io/managed-namespace: "true"
 
-    # 3. Role for write access to the namespace
-    - id: role
+    # 3. Create ACK AccessEntry with namespace-scoped EditPolicy
+    - id: accessEntry
       template:
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: Role
+        apiVersion: eks.services.k8s.aws/v1alpha1
+        kind: AccessEntry
         metadata:
-          name: argocd-deploy
-          namespace: ${schema.spec.namespace}
-          labels:
-            app.kubernetes.io/managed-by: kro
-        rules:
-          - apiGroups: [""]
-            resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
-            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-          - apiGroups: ["apps"]
-            resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-          - apiGroups: ["networking.k8s.io"]
-            resources: ["ingresses", "networkpolicies"]
-            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-          - apiGroups: ["batch"]
-            resources: ["jobs", "cronjobs"]
-            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
-    # 4. RoleBinding - binds to ArgoCD user from ConfigMap
-    - id: roleBinding
-      template:
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: RoleBinding
-        metadata:
-          name: argocd-deploy
-          namespace: ${schema.spec.namespace}
-          labels:
-            app.kubernetes.io/managed-by: kro
-        subjects:
-          - kind: User
-            name: ${config.data.argocdUserArn}
-            apiGroup: rbac.authorization.k8s.io
-        roleRef:
-          kind: Role
-          name: argocd-deploy
-          apiGroup: rbac.authorization.k8s.io
+          name: argocd-${schema.spec.namespace}
+          namespace: argocd
+        spec:
+          clusterName: ${config.data.clusterName}
+          principalARN: ${config.data.argocdRoleArn}
+          type: STANDARD
+          accessPolicies:
+            - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy
+              accessScope:
+                type: namespace
+                namespaces:
+                  - ${schema.spec.namespace}

@@ -89,50 +89,6 @@ locals {
 ################################################################################
 
 ################################################################################
-# EBS CSI Driver IAM Role for Pod Identity
-################################################################################
-
-resource "aws_iam_role" "ebs_csi_driver" {
-  name = "${local.name}-ebs-csi-driver"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "pods.eks.amazonaws.com"
-      }
-      Action = [
-        "sts:AssumeRole",
-        "sts:TagSession"
-      ]
-    }]
-  })
-
-  tags = local.tags
-}
-
-resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
-  role       = aws_iam_role.ebs_csi_driver.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
-
-# Additional permission required by EBS CSI driver v1.54+ for health checks
-resource "aws_iam_role_policy" "ebs_csi_driver_additional" {
-  name = "${local.name}-ebs-csi-additional"
-  role = aws_iam_role.ebs_csi_driver.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["ec2:DescribeAvailabilityZones"]
-      Resource = "*"
-    }]
-  })
-}
-
-################################################################################
 # KMS Key for EKS Secrets Encryption
 ################################################################################
 
@@ -165,13 +121,6 @@ module "eks" {
   }
 
   addons = {
-    aws-ebs-csi-driver = {
-      most_recent = true
-      pod_identity_association = [{
-        role_arn        = aws_iam_role.ebs_csi_driver.arn
-        service_account = "ebs-csi-controller-sa"
-      }]
-    }
     coredns = {
       most_recent = true
     }
