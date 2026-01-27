@@ -71,3 +71,17 @@ output "kro_capability_arn" {
   description = "kro capability ARN"
   value       = aws_eks_capability.kro.arn
 }
+
+#---------------------------------------------------------------
+# kro RGD Outputs
+#---------------------------------------------------------------
+
+output "argocd_kubernetes_group" {
+  description = "Kubernetes group assigned to ArgoCD for custom RBAC bindings"
+  value       = "argocd-kro-access"
+}
+
+output "argocd_namespace_rgd" {
+  description = "kro RGD for creating namespaces with ArgoCD access"
+  value       = "ArgoCDNamespace (create in argocd namespace)"
+}

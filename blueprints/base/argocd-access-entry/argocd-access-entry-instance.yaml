@@ -1,0 +1,9 @@
+# Instance of ArgoCDAccessEntry RGD
+# Creates the AccessEntry with Kubernetes group for ArgoCD RBAC bindings
+apiVersion: kro.run/v1alpha1
+kind: ArgoCDAccessEntry
+metadata:
+  name: argocd-capability
+  namespace: argocd
+spec:
+  name: argocd-capability-group

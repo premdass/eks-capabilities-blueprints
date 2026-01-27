@@ -1,0 +1,50 @@
+# ACK AccessEntry to add Kubernetes group to ArgoCD's access entry
+# This enables custom RBAC bindings for ArgoCD using the group name
+#
+# Uses adopt-or-create policy to adopt the capability-created access entry
+# and add kubernetesGroups for custom RBAC bindings
+#
+# The RGD reads values from the argocd-config ConfigMap (created by Terraform)
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: argocd-access-entry
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: ArgoCDAccessEntry
+    spec:
+      # No user input needed - all values come from ConfigMap
+      name: string | default="argocd-capability-group" description="Name for the access entry resource"
+    status:
+      accessEntryReady: ${accessEntry.status.ackResourceMetadata.arn != ""}
+
+  resources:
+    # 1. Reference the ConfigMap to get ArgoCD role ARN and cluster name
+    - id: config
+      readyWhen:
+        - ${config.data.argocdRoleArn != ""}
+        - ${config.data.clusterName != ""}
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: argocd-config
+          namespace: argocd
+
+    # 2. Adopt existing AccessEntry and add Kubernetes group
+    - id: accessEntry
+      template:
+        apiVersion: eks.services.k8s.aws/v1alpha1
+        kind: AccessEntry
+        metadata:
+          name: ${schema.spec.name}
+          namespace: argocd
+          annotations:
+            services.k8s.aws/adoption-policy: "adopt-or-create"
+        spec:
+          clusterName: ${config.data.clusterName}
+          principalARN: ${config.data.argocdRoleArn}
+          type: STANDARD
+          kubernetesGroups:
+            - "argocd-kro-access"

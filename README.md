@@ -57,6 +57,8 @@ The Terraform template in this repository creates:
 - Required IAM roles and policies
 - KMS encryption for Kubernetes secrets
 - CloudWatch logging for cluster audit and security
+- kro RGDs for ArgoCD namespace onboarding and access entry configuration
+- RBAC bindings to allow ArgoCD to create kro custom resources
 
 To create the cluster, clone this repository and run:
 
@@ -134,6 +136,7 @@ After you have a cluster with EKS Capabilities enabled, you can start testing ea
 | Component | Description |
 |-----------|-------------|
 | [argocd-namespace](blueprints/base/argocd-namespace/) | kro RGD for ArgoCD namespace onboarding with RBAC |
+| [argocd-access-entry](blueprints/base/argocd-access-entry/) | kro RGD to grant ArgoCD custom RBAC permissions |
 
 ## Supported Versions
 

@@ -92,7 +92,9 @@ resource "aws_iam_role_policy" "ack_capability" {
           "eks:UpdateAccessEntry",
           "eks:AssociateAccessPolicy",
           "eks:DisassociateAccessPolicy",
-          "eks:ListAssociatedAccessPolicies"
+          "eks:ListAssociatedAccessPolicies",
+          "eks:TagResource",
+          "eks:UntagResource"
         ]
         Resource = [
           "arn:aws:eks:${var.region}:*:cluster/${local.name}",
@@ -237,18 +239,53 @@ resource "kubernetes_cluster_role_v1" "kro_resource_manager" {
     verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
-  # ACK AccessEntry - RGD creates AccessEntries for ArgoCD
+  # RBAC - RGD creates Role/RoleBinding for ArgoCD access
   rule {
-    api_groups = ["eks.services.k8s.aws"]
-    resources  = ["accessentries"]
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["roles", "rolebindings"]
     verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
-  # ConfigMaps - RGD reads argocd-config (read-only)
+  # Core resources - kro must have these to grant them to ArgoCD
   rule {
     api_groups = [""]
-    resources  = ["configmaps"]
-    verbs      = ["get", "list", "watch"]
+    resources  = ["configmaps", "endpoints", "persistentvolumeclaims", "pods", "secrets", "services", "serviceaccounts"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+
+  # Apps - kro must have these to grant them to ArgoCD
+  rule {
+    api_groups = ["apps"]
+    resources  = ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+
+  # Batch - kro must have these to grant them to ArgoCD
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs", "cronjobs"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+
+  # Networking - kro must have these to grant them to ArgoCD
+  rule {
+    api_groups = ["networking.k8s.io"]
+    resources  = ["ingresses", "networkpolicies"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+
+  # Autoscaling - kro must have these to grant them to ArgoCD
+  rule {
+    api_groups = ["autoscaling"]
+    resources  = ["horizontalpodautoscalers"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+
+  # Policy - kro must have these to grant them to ArgoCD
+  rule {
+    api_groups = ["policy"]
+    resources  = ["poddisruptionbudgets"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
   depends_on = [module.eks]
@@ -325,11 +362,13 @@ resource "aws_eks_access_policy_association" "argocd_admin_view" {
 #---------------------------------------------------------------
 # ArgoCD kro Access
 # ArgoCD needs to create ArgoCDNamespace CRs to trigger namespace onboarding
+# Scoped to argocd namespace only (all ArgoCDNamespace CRs must be in argocd namespace)
 #---------------------------------------------------------------
 
-resource "kubernetes_cluster_role_v1" "argocd_kro_access" {
+resource "kubernetes_role_v1" "argocd_kro_access" {
   metadata {
-    name = "argocd-kro-access"
+    name      = "argocd-kro-access"
+    namespace = "argocd"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "app.kubernetes.io/component"  = "argocd"
@@ -343,12 +382,13 @@ resource "kubernetes_cluster_role_v1" "argocd_kro_access" {
     verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 
-  depends_on = [module.eks]
+  depends_on = [aws_eks_capability.argocd]
 }
 
-resource "kubernetes_cluster_role_binding_v1" "argocd_kro_access" {
+resource "kubernetes_role_binding_v1" "argocd_kro_access" {
   metadata {
-    name = "argocd-kro-access"
+    name      = "argocd-kro-access"
+    namespace = "argocd"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "app.kubernetes.io/component"  = "argocd"
@@ -357,14 +397,16 @@ resource "kubernetes_cluster_role_binding_v1" "argocd_kro_access" {
 
   role_ref {
     api_group = "rbac.authorization.k8s.io"
-    kind      = "ClusterRole"
-    name      = kubernetes_cluster_role_v1.argocd_kro_access.metadata[0].name
+    kind      = "Role"
+    name      = kubernetes_role_v1.argocd_kro_access.metadata[0].name
   }
 
+  # Use Group - the group is added to ArgoCD's access entry via the argocd-access-entry RGD
   subject {
-    kind      = "User"
-    name      = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/${aws_iam_role.argocd_capability.name}/ARGOCD"
+    kind      = "Group"
+    name      = "argocd-kro-access"
     api_group = "rbac.authorization.k8s.io"
+    namespace = ""
   }
 }
 
@@ -417,3 +459,28 @@ resource "kubectl_manifest" "argocd_namespace_rgd" {
     kubernetes_config_map_v1.argocd_config
   ]
 }
+
+#---------------------------------------------------------------
+# kro ResourceGraphDefinition for ArgoCD Access Entry
+# DISABLED: ACK adoption of capability-created access entry causes issues
+# The capability loses access when ACK takes ownership
+# TODO: Find alternative approach to add kubernetesGroups
+#---------------------------------------------------------------
+
+# resource "kubectl_manifest" "argocd_access_entry_rgd" {
+#   yaml_body = file("${path.module}/../../blueprints/base/argocd-access-entry/argocd-access-entry-rgd.yaml")
+#
+#   depends_on = [
+#     aws_eks_capability.kro,
+#     aws_eks_capability.ack,
+#     kubernetes_config_map_v1.argocd_config
+#   ]
+# }
+
+# resource "kubectl_manifest" "argocd_access_entry_instance" {
+#   yaml_body = file("${path.module}/../../blueprints/base/argocd-access-entry/argocd-access-entry-instance.yaml")
+#
+#   depends_on = [
+#     kubectl_manifest.argocd_access_entry_rgd
+#   ]
+# }

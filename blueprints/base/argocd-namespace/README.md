@@ -1,54 +1,53 @@
 # ArgoCD Namespace Onboarding with kro
 
-Automates namespace onboarding for ArgoCD deployments.
+Automates namespace onboarding for ArgoCD deployments using ACK AccessEntries.
 
 ## What it does
 
 When you create an `ArgoCDNamespace` CR, kro automatically creates:
 - Namespace with ArgoCD labels
-- Role with write permissions (pods, deployments, services, etc.)
-- RoleBinding granting ArgoCD access to the namespace
+- ACK AccessEntry granting ArgoCD `AmazonEKSEditPolicy` scoped to that namespace
 
 ## Prerequisites
 
 - kro capability enabled
-- ArgoCD capability enabled  
-- Terraform applied (creates the `argocd-config` ConfigMap in `default` namespace)
+- ArgoCD capability enabled
+- ACK capability enabled
+- Terraform applied (creates the `argocd-config` ConfigMap and applies this RGD)
+
+## Deployed by Terraform
+
+This RGD is automatically applied by Terraform in `capabilities.tf`. No manual kubectl apply needed.
 
 ## Usage
 
-### 1. Apply the ResourceGraphDefinition
-
-```bash
-kubectl apply -f blueprints/base/argocd-namespace/argocd-namespace-rgd.yaml
-```
-
-### 2. Create a namespace for ArgoCD
+Create a namespace for ArgoCD to deploy to:
 
 ```yaml
 apiVersion: kro.run/v1alpha1
 kind: ArgoCDNamespace
 metadata:
   name: my-app
+  namespace: argocd  # Must be in argocd namespace
 spec:
   namespace: my-app
 ```
 
 That's it. No account IDs or role ARNs needed - kro reads them from the ConfigMap.
 
-### 3. Verify
+## Verify
 
 ```bash
 kubectl get namespace my-app
-kubectl get role argocd-deploy -n my-app
-kubectl get rolebinding argocd-deploy -n my-app
+kubectl get accessentry -n argocd
 ```
 
 ## How it works
 
-1. Terraform creates a ConfigMap (`argocd-config` in `default` namespace) containing the ArgoCD user ARN
-2. kro RGD reads the ARN from the ConfigMap
-3. When you create an `ArgoCDNamespace`, kro creates the namespace and RBAC binding to that ARN
+1. Terraform creates a ConfigMap (`argocd-config` in `argocd` namespace) containing the ArgoCD role ARN and cluster name
+2. kro RGD reads these values from the ConfigMap
+3. When you create an `ArgoCDNamespace`, kro creates the namespace and an ACK AccessEntry
+4. ACK creates an EKS access entry granting ArgoCD `AmazonEKSEditPolicy` scoped to that namespace
 
 ## Files
 
